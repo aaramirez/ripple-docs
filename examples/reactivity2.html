@@ -1,0 +1,90 @@
+<div id="app"></div>
+
+<script>
+  // ========== Core reactive primitives ==========
+  // Simple effect system with dependency tracking
+  let currentEffect = null;
+
+  function effect(fn, name = "effect") {
+    const wrapped = () => {
+      currentEffect = wrapped;                  // mark this effect as "currently collecting"
+      wrapped._name = name;
+      console.log(`[RUN] ${name}`);
+      try { fn(); } finally { currentEffect = null; } // run and stop collecting
+    };
+    wrapped(); // run once to collect initial dependencies
+    return wrapped;
+  }
+
+  // Fine-grained signal (single reactive value)
+  function createSignal(initial, name = "signal") {
+    let value = initial;
+    const subscribers = new Set(); // effects that depend on this signal
+
+    function get() {
+      // If an effect is running, register it as a subscriber
+      if (currentEffect) {
+        subscribers.add(currentEffect);
+        console.log(`[TRACK] ${name} → ${currentEffect._name}`);
+      }
+      return value;
+    }
+
+    function set(next) {
+      if (Object.is(next, value)) return;
+      value = next;
+      console.log(`[SET] ${name} =`, value, `→ notify ${subscribers.size} effect(s)`);
+      // Re-run all dependent effects
+      subscribers.forEach(fn => fn());
+    }
+
+    return [get, set];
+  }
+
+  // Computed value (derived signal): recomputes when dependencies change
+  function createComputed(compute, name = "computed") {
+    const [getVal, setVal] = createSignal(undefined, name);
+    effect(() => setVal(compute()), `${name} (recompute)`);
+    return getVal; // read-only getter for the derived value
+  }
+
+  // ========== App: wiring DOM to reactive state ==========
+  const root = document.getElementById("app");
+
+  // 1) Create reactive state
+  const [$count, setCount] = createSignal(0, "$count");
+
+  // 2) Create a derived (computed) value
+  const $double = createComputed(() => $count() * 2, "$double");
+
+  // 3) Build DOM
+  const btn = document.createElement("button");
+  const info = document.createElement("div");
+  const doubleInfo = document.createElement("div");
+  root.append(btn, info, doubleInfo);
+
+  // 4) Bind UI to signals via effects (this is where tracking happens)
+  effect(() => {
+    // Because this effect reads $count(), it automatically SUBSCRIBES to $count
+    btn.textContent = `Increment (current: ${$count()})`;
+  }, "renderButtonLabel");
+
+  effect(() => {
+    // Also subscribes to $count
+    info.textContent = `Count is ${$count()}`;
+  }, "renderCountText");
+
+  effect(() => {
+    // Reads $double(), which itself depends on $count()
+    // Subscribes to $double (and transitively to $count via the computed)
+    doubleInfo.textContent = `Double is ${$double()}`;
+  }, "renderDoubleText");
+
+  // 5) Update signal on click — only dependent effects re-run
+  btn.addEventListener("click", () => {
+    setCount($count() + 1); // triggers renderButtonLabel & renderCountText & renderDoubleText
+  });
+
+  // (Optional) programmatic updates for clarity:
+  // setInterval(() => setCount($count() + 1), 2000);
+</script>

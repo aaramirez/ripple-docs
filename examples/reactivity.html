@@ -1,0 +1,68 @@
+<div id="app"></div>
+
+<script>
+  // Simple reactive signal implementation
+  function createSignal(initial) {
+    let value = initial;
+    const subscribers = new Set();
+    console.log('[createSignal] initialized with', initial);
+
+    function get() {
+      console.log('[signal.get] called; currentEffect set?', !!currentEffect);
+      if (currentEffect) {
+        subscribers.add(currentEffect);
+        console.log('[signal.get] dependency tracked; subscribers now', subscribers.size);
+      }
+      return value;
+    }
+
+    function set(newValue) {
+      console.log('[signal.set] changing value', value, '->', newValue);
+      value = newValue;
+      console.log('[signal.set] notifying', subscribers.size, 'subscriber(s)');
+      subscribers.forEach(fn => {
+        try {
+          fn();
+        } catch (e) {
+          console.error('[signal.set] effect threw', e);
+        }
+      });
+    }
+
+    return [get, set];
+  }
+
+  // Effect system (tracks dependencies automatically)
+  let currentEffect = null;
+  function effect(fn) {
+    console.log('[effect] registering and executing effect', fn.name || '(anonymous)');
+    currentEffect = fn;
+    fn();              // run once initially
+    currentEffect = null;
+    console.log('[effect] completed initial run');
+  }
+
+  // --------------------------
+  // Usage
+  // --------------------------
+
+  // Create a reactive variable
+  const [count, setCount] = createSignal(0);
+
+  // Create DOM
+  const app = document.getElementById("app");
+  const button = document.createElement("button");
+  app.appendChild(button);
+
+  // Bind UI to signal
+  effect(() => {
+    console.log('[effect body] recomputing button label with count =', count());
+    button.textContent = "Count: " + count();
+  });
+
+  // Update signal on click
+  button.addEventListener("click", () => {
+    console.log('[click] button clicked; incrementing count');
+    setCount(count() + 1);
+  });
+</script>

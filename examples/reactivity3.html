@@ -1,0 +1,74 @@
+<div id="app"></div>
+
+<script>
+  // ========== Core reactive primitives (with clear logs) ==========
+
+  let currentEffect = null;
+
+  // effect: runs a function and tracks any signals it reads
+  function effect(fn, name = "effect") {
+    const wrapped = () => {
+      currentEffect = wrapped;
+      wrapped._name = name;
+      console.log(`[RUN] ${name}`);
+      try {
+        fn(); // During this call, any signal get() will subscribe this effect
+      } finally {
+        currentEffect = null;
+      }
+    };
+    wrapped(); // initial run to collect dependencies
+    return wrapped;
+  }
+
+  // createSignal: single reactive value with auto dependency tracking
+  function createSignal(initial, name = "signal") {
+    let value = initial;
+    const subscribers = new Set(); // effects that depend on this signal
+
+    function get() {
+      if (currentEffect) {
+        subscribers.add(currentEffect);
+        console.log(`[TRACK] ${name} → ${currentEffect._name}`);
+      }
+      return value;
+    }
+
+    function set(newValue) {
+      if (Object.is(newValue, value)) return; // no-op if unchanged
+      value = newValue;
+      console.log(`[SET] ${name} = ${value} → notify ${subscribers.size} effect(s)`);
+      subscribers.forEach(fn => fn()); // re-run all dependent effects
+    }
+
+    return [get, set];
+  }
+
+  // ========== Usage ==========
+
+  // 1) Create a reactive variable
+  const [count, setCount] = createSignal(0, "count");
+
+  // 2) Create DOM
+  const app = document.getElementById("app");
+  const button = document.createElement("button");
+  const info   = document.createElement("div");
+  app.appendChild(button);
+  app.appendChild(info);
+
+  // 3) Bind UI to the signal via effects (these reads cause subscription)
+  effect(() => {
+    // Reads count() → subscribes this effect to "count"
+    button.textContent = "Increment (current: " + count() + ")";
+  }, "renderButtonLabel");
+
+  effect(() => {
+    // Reads count() → subscribes this effect to "count"
+    info.textContent = "Count is " + count();
+  }, "renderCountText");
+
+  // 4) Update signal on click (only dependent effects re-run)
+  button.addEventListener("click", () => {
+    setCount(count() + 1);
+  });
+</script>
